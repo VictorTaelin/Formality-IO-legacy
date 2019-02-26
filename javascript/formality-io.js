@@ -1,95 +1,18 @@
 const F = require("formality-lang");
 const S = require("formality-sugars");
 
-const defs = F.parse(`
-  Typ
-  : {T : (Typ T)} Type
-  = [T] {self : (T self)} Type
-
-  Chr
-  : (Typ Chr)
-  = [self]
-    {-Prop : (Typ Chr)}
-    {O     : {pred : (Chr pred)} (Prop (Chr.O pred))}
-    {I     : {pred : (Chr pred)} (Prop (Chr.I pred))}
-    {E     : (Prop Chr.E)}
-    (Prop self)
-
-  Chr.E
-  : (Chr Chr.E)
-  = [-Prop] [O] [I] [E]
-    E
-
-  Chr.O
-  : {pred : (Chr pred)}
-    (Chr (Chr.O pred))
-  = [pred] [-Prop] [O] [I] [E]
-    (O pred)
-
-  Chr.I
-  : {pred : (Chr pred)}
-    (Chr (Chr.I pred))
-  = [pred] [-Prop] [O] [I] [E]
-    (I pred)
-
-  Str
-  : (Typ Str)
-  = [self]
-    {-Prop : (Typ Str)}
-    {cons  : {head : (Chr head)} {tail : (Str tail)} (Prop (Str.cons head tail))}
-    {nil   : (Prop Str.nil)}
-    (Prop self)
-
-  Str.cons
-  : {head : (Chr head)}
-    {tail : (Str tail)}
-    (Str (Str.cons head tail))
-  = [head] [tail] [-Prop] [cons] [nil]
-    (cons head tail)
-
-  Str.nil
-  : (Str Str.nil)
-  = [-Prop] [cons] [nil]
-    nil
-
-  IO
-  : (Typ IO) 
-  = [self]
-    {-Prop : (Typ IO)}
-    {ask :
-      {cmd : (Str cmd)}
-      {arg : (Str arg)}
-      {cnt : {res : (Str res)} (IO (cnt res))}
-      (Prop (IO.ask cmd arg cnt))}
-    {end : (Prop IO.end)}
-    (Prop self)
-
-  IO.ask
-  : {cmd : (Str cmd)}
-    {arg : (Str arg)}
-    {cnt : {res : (Str res)} (IO (cnt res))}
-    (IO (IO.ask cmd arg cnt))
-  = [cmd] [arg] [cnt] [-Prop] [ask] [end]
-    (ask cmd arg cnt)
-
-  IO.end
-  : (IO IO.end)
-  = [-Prop] [ask] [end] end
-`);
-
 // Runs a IO term with a given effectful operation table
-function run_IO_with(term, term_defs, io) {
-  var defz = Object.assign(Object.assign({}, defs), term_defs);
+function run_IO_with(term, defs, io) {
   var term = F.erase(term);
-  var term = F.norm(term, defz, false);
+  var term = F.norm(term, defs, false);
   var body = term[1].body[1].body;
   if (body[0] === "Var") {
     return new Promise((res) => res(""));
   } else {
-    var cmd = S.term_to_string(F.norm(body[1].func[1].func[1].argm, defz, true));
-    var arg = S.term_to_string(F.norm(body[1].func[1].argm, defz, true));
+    var cmd = S.term_to_string(F.norm(body[1].func[1].func[1].argm, defs, true));
+    var arg = S.term_to_string(F.norm(body[1].func[1].argm, defs, true));
     var cnt = body[1].argm;
-    return io[cmd](arg).then((ret) => run_IO_with(F.App(cnt, S.string_to_term(ret)), term_defs, io));
+    return io[cmd](arg).then((ret) => run_IO_with(F.App(cnt, S.string_to_term(ret)), defs, io));
   }
 }
 
@@ -130,7 +53,6 @@ function importing(imports, defs) {
 }
 
 module.exports = {
-  defs,
   run_IO_with,
   rename,
   importing

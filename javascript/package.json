@@ -1,6 +1,6 @@
 {
   "name": "formality-io",
-  "version": "0.1.1",
+  "version": "0.1.18b",
   "description": "",
   "main": "formality-io.js",
   "scripts": {
@@ -17,7 +17,10 @@
   },
   "homepage": "https://github.com/moonad/formality-io#readme",
   "dependencies": {
-    "formality-lang": "^0.1.17",
-    "formality-sugars": "^0.1.0"
+    "formality-lang": "^0.1.18",
+    "formality-sugars": "^0.1.18"
+  },
+  "devDependencies": {
+    "formality-stdlib": "^0.1.2"
   }
 }
