@@ -1,110 +1,137 @@
 const F = require("formality-lang");
+const S = require("formality-sugars");
 
-const io_defs = F.parse(`
+const defs = F.parse(`
   Typ
   : {T : (Typ T)} Type
   = [T] {self : (T self)} Type
 
-  Bin
-  : (Typ Bin)
+  Chr
+  : (Typ Chr)
   = [self]
-    {-P : (Typ Bin)}
-    {O  : {pred : (Bin pred)} (P (Bin.O pred))}
-    {I  : {pred : (Bin pred)} (P (Bin.I pred))}
-    {E  : (P Bin.E)}
-    (P self)
+    {-Prop : (Typ Chr)}
+    {O     : {pred : (Chr pred)} (Prop (Chr.O pred))}
+    {I     : {pred : (Chr pred)} (Prop (Chr.I pred))}
+    {E     : (Prop Chr.E)}
+    (Prop self)
 
-  Bin.E
-  : (Bin Bin.E)
-  = [-P] [O] [I] [E]
+  Chr.E
+  : (Chr Chr.E)
+  = [-Prop] [O] [I] [E]
     E
 
-  Bin.O
-  : {pred : (Bin pred)}
-    (Bin (Bin.O pred))
-  = [pred] [-P] [O] [I] [E]
+  Chr.O
+  : {pred : (Chr pred)}
+    (Chr (Chr.O pred))
+  = [pred] [-Prop] [O] [I] [E]
     (O pred)
 
-  Bin.I
-  : {pred : (Bin pred)}
-    (Bin (Bin.I pred))
-  = [pred] [-P] [O] [I] [E]
+  Chr.I
+  : {pred : (Chr pred)}
+    (Chr (Chr.I pred))
+  = [pred] [-Prop] [O] [I] [E]
     (I pred)
+
+  Str
+  : (Typ Str)
+  = [self]
+    {-Prop : (Typ Str)}
+    {cons  : {head : (Chr head)} {tail : (Str tail)} (Prop (Str.cons head tail))}
+    {nil   : (Prop Str.nil)}
+    (Prop self)
+
+  Str.cons
+  : {head : (Chr head)}
+    {tail : (Str tail)}
+    (Str (Str.cons head tail))
+  = [head] [tail] [-Prop] [cons] [nil]
+    (cons head tail)
+
+  Str.nil
+  : (Str Str.nil)
+  = [-Prop] [cons] [nil]
+    nil
 
   IO
   : (Typ IO) 
   = [self]
-    {-P : (Typ IO)}
+    {-Prop : (Typ IO)}
     {ask :
-      {cmd : (Bin cmd)}
-      {arg : (Bin arg)}
-      {cnt : {res : (Bin res)} (IO (cnt res))}
-      (P (IO.ask cmd arg cnt))}
-    {end : (P IO.end)}
-    (P self)
+      {cmd : (Str cmd)}
+      {arg : (Str arg)}
+      {cnt : {res : (Str res)} (IO (cnt res))}
+      (Prop (IO.ask cmd arg cnt))}
+    {end : (Prop IO.end)}
+    (Prop self)
 
   IO.ask
-  : {cmd : (Bin cmd)}
-    {arg : (Bin arg)}
-    {cnt : {res : (Bin res)} (IO (cnt res))}
+  : {cmd : (Str cmd)}
+    {arg : (Str arg)}
+    {cnt : {res : (Str res)} (IO (cnt res))}
     (IO (IO.ask cmd arg cnt))
-  = [cmd] [arg] [cnt] [-P] [ask] [end]
+  = [cmd] [arg] [cnt] [-Prop] [ask] [end]
     (ask cmd arg cnt)
 
   IO.end
   : (IO IO.end)
-  = [-P] [ask] [end] end
+  = [-Prop] [ask] [end] end
 `);
 
-// Converts a JavaScript string of 0s and 1s to a Formality Bin
-function bitstring_to_term(bits) {
-  var LamO = term => F.Lam("O", null, term);
-  var LamI = term => F.Lam("I", null, term);
-  var LamE = term => F.Lam("E", null, term);
-  var O    = term => LamO(LamI(LamE(F.App(F.Var(2),term))));
-  var I    = term => LamO(LamI(LamE(F.App(F.Var(1),term))));
-  var term = LamO(LamI(LamE(F.Var(0))));
-  for (var i = 0; i < bits.length; ++i) {
-    term = (bits[i] === "0" ? O : I)(term);
-  }
-  return term;
-}
-
-// Converts a Formality Bin to a JavaScript string of 0s and 1s
-function term_to_bitstring(term, bits = "") {
-  var body = term[1].body[1].body[1].body;
-  if (body[0] === "App") {
-    var bit = body[1].func[1].index === 2 ? "0" : "1";
-    return term_to_bitstring(body[1].argm, bit + bits);
-  } else {
-    return bits;
-  }
-}
-
+// Runs a IO term with a given effectful operation table
 function run_IO_with(term, term_defs, io) {
-  var defs = Object.assign(Object.assign({}, io_defs), term_defs);
+  var defz = Object.assign(Object.assign({}, defs), term_defs);
   var term = F.erase(term);
-  var term = F.norm(term, defs, false);
+  var term = F.norm(term, defz, false);
   var body = term[1].body[1].body;
   if (body[0] === "Var") {
     return new Promise((res) => res(""));
   } else {
-    var cmd = term_to_bitstring(F.norm(body[1].func[1].func[1].argm, defs, true));
-    var arg = term_to_bitstring(F.norm(body[1].func[1].argm, defs, true));
+    var cmd = S.term_to_string(F.norm(body[1].func[1].func[1].argm, defz, true));
+    var arg = S.term_to_string(F.norm(body[1].func[1].argm, defz, true));
     var cnt = body[1].argm;
-    return io[cmd](arg).then((ret) => run_IO_with(F.App(cnt, bitstring_to_term(ret)), defs, io));
+    return io[cmd](arg).then((ret) => run_IO_with(F.App(cnt, S.string_to_term(ret)), term_defs, io));
   }
 }
 
-function check_IO(term, term_defs) {
-  var defs = Object.assign(Object.assign({}, io_defs), term_defs);
-  F.check(term, F.App(F.Ref("IO"), term), defs);
+// Renames all terms in a defs
+function rename(defs, rename = (name => name)) {
+  function rn(term) {
+    if (!term) {
+      return null;
+    } else {
+      switch (term[0]) {
+        case "Var": return F.Var(term[1].index);
+        case "Typ": return F.Typ();
+        case "All": return F.All(term[1].name, rn(term[1].bind), rn(term[1].body), term[1].eras);
+        case "Lam": return F.Lam(term[1].name, rn(term[1].bind), rn(term[1].body), term[1].eras);
+        case "App": return F.App(rn(term[1].func), rn(term[1].argm), term[1].eras);
+        case "Ref": return F.Ref(rename(term[1].name), term[1].eras);
+      }
+    }
+  }
+  var new_defs = {};
+  for (var name in defs) {
+    new_defs[rename(name)] = {
+      term: rn(defs[name].term),
+      type: rn(defs[name].type),
+      done: false
+    };
+  }
+  return new_defs;
+}
+
+// Imports an array of [defs, rename] tuples into a defs
+function importing(imports, defs) {
+  var new_defs = {};
+  for (var [imp_defs, imp_rename] of imports) {
+    new_defs = Object.assign(new_defs, rename(imp_defs, imp_rename));
+  }
+  return Object.assign(new_defs, defs);
 }
 
 module.exports = {
-  bitstring_to_term,
-  term_to_bitstring,
+  defs,
   run_IO_with,
-  check_IO,
-  defs: io_defs
+  rename,
+  importing
 };
