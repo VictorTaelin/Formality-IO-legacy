@@ -5,6 +5,7 @@ const FI = require(".");
 const rl = require("readline").createInterface({input: process.stdin, output: process.stdout});
 
 // Simple program that asks your name and greets you
+
 var defs = FL.parse(FP + FS.desugar(`
   Str.concat
   : {a : (Str a)} {b : (Str b)} (Str (Str.concat a b))
